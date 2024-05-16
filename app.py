@@ -8,12 +8,6 @@ welcome_message = "Welcome! I'm Sage, your friendly AI assistant. I'm here to he
 @cl.on_chat_start  
 async def start_chat():
 
-    input = {"question": ""}
-
-    for output in app.stream(input):
-        for key, value in output.items():
-            print(f"Finished running...{key}:")
-
     print("Initialised chain...")
 
     await cl.Message(content=welcome_message).send()
@@ -27,7 +21,7 @@ async def main(message: cl.Message):
 
     input = {"question": message.content}
 
-    for output in runnable.stream(input):
+    async for output in runnable.astream(input):
         for key, value in output.items():
             print(f"Finished running: {key}:")
             if key == "generator_agent":
