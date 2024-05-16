@@ -4,7 +4,7 @@ from sage import app
 from langchain.schema.runnable import RunnableConfig
 
 
-welcome_message = "Welcome! Ask anything about your stored documents and get AI-powered insights in seconds."
+welcome_message = "Welcome! I am Sage,a digital assistant that help you quickly find answers to HR and policy questions. How can I help you today?"
 
 @cl.on_chat_start  
 async def start_chat():
