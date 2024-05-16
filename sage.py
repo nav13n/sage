@@ -675,10 +675,3 @@ workflow.add_edge("policy_agent", "generator_agent")
 workflow.add_edge("generator_agent", END)
 
 app = workflow.compile()
-
-
-from langchain_core.runnables import chain
-@chain
-def sage_chain(question):
-  inputs = {"question": question}
-  return app.invoke(inputs)
