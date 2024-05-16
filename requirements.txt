@@ -1,0 +1,15 @@
+chainlit
+tiktoken
+python-dotenv
+langchain
+langchain_core
+langchain-community
+langchainhub
+faiss-cpu
+langgraph
+fastembed
+flashrank
+pandas
+huggingface-hub
+langchain-groq
+pymupdf
