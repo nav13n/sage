@@ -328,14 +328,14 @@ from langchain_core.output_parsers import StrOutputParser
 ROUTER_AGENT_PROMPT_TEMPLATE = """
 <|begin_of_text|><|start_header_id|>system<|end_header_id|>
 
-You are an expert at delegating user questions to one of the most appropriate agents 'policy_agent' or 'payroll_agent'.
+You are an expert at delegating user questions to one of the most appropriate agents 'raqa' or 'payroll'.
 
 Use the following criteria to determine the appropriate agents to answer the user que:
 
-- If the query is regarding payslips, salary, tax deductions, basepay of a given month, use payroll_agent'.
-- If the question is closely related to general human resource queries, organisational policies, prompt engineering, or adversarial attacks, even if the keywords are not explicitly mentioned, use the 'policyagent'.
+- If the query is regarding payslips, salary, tax deductions, basepay of a given month, use 'payroll'.
+- If the question is closely related to general human resource queries, organisational policies, prompt engineering, or adversarial attacks, even if the keywords are not explicitly mentioned, use the 'raqa'.
 
-Your output should be a JSON object with a single key 'agent' and a value of either 'policy_agent' or 'payroll_agent'. Do not include any preamble, explanation, or additional text.
+Your output should be a JSON object with a single key 'agent' and a value of either 'raqa' or 'payroll'. Do not include any preamble, explanation, or additional text.
 
 User's Question: {question}
 
@@ -549,6 +549,96 @@ api_result
 payroll_qa_chain.invoke({"question":"What is my salary on jan 2024 ?", "data":api_result, "schema":payroll_schema})
 
 
+
+
+### Retrieval Grader
+
+from langchain.prompts import PromptTemplate
+from langchain_community.chat_models import ChatOllama
+from langchain_core.output_parsers import JsonOutputParser
+
+
+RETREIVAL_GRADER_PROMPT = PromptTemplate(
+    template="""<|begin_of_text|><|start_header_id|>system<|end_header_id|>
+    You are a grader assessing relevance of a retrieved document to a user question. \n 
+    Here is the retrieved document: \n\n {document} \n\n
+    Here is the user question: {question} \n
+    If the document contains keywords related to the user question, grade it as relevant. \n
+    It does not need to be a stringent test. The goal is to filter out erroneous retrievals. \n
+    Give a binary score 'yes' or 'no' score to indicate whether the document is relevant to the question. \n
+    Provide the binary score as a JSON with a single key 'score',
+    Do not include any preamble, explanation, or additional text
+    <|eot_id|><|start_header_id|>assistant<|end_header_id|>""",
+    input_variables=["question", "document"],
+)
+
+retrieval_grader = RETREIVAL_GRADER_PROMPT | llm | JsonOutputParser()
+
+# question = "agent memory"
+# docs = retriever.get_relevant_documents(question)
+# doc_txt = docs[1].page_content
+# print(retrieval_grader.invoke({"question": question, "document": doc_txt}))
+
+
+### Hallucination Grader
+
+# Prompt
+HALLUCINATION_GRADER_PROMPT = PromptTemplate(
+    template="""<|begin_of_text|><|start_header_id|>system<|end_header_id|>
+    You are a grader assessing whether an answer is grounded in / supported by a set of facts. \n 
+    Here are the facts:
+    \n ------- \n
+    {documents} 
+    \n ------- \n
+    Here is the answer: {answer}
+    Give a binary score 'yes' or 'no' score to indicate whether the answer is grounded in / supported by a set of facts. \n
+    Provide the binary score as a JSON with a single key 'score'.
+    Do not include any preamble, explanation, or additional text
+    <|eot_id|><|start_header_id|>assistant<|end_header_id|>""",
+    input_variables=["answer", "documents"],
+)
+
+hallucination_grader = HALLUCINATION_GRADER_PROMPT | llm | JsonOutputParser()
+# hallucination_grader.invoke({"documents": docs, "generation": generation})
+
+
+### Answer Grader
+
+# Prompt
+ANSWER_GRADER_PROMPT = PromptTemplate(
+    template="""<|begin_of_text|><|start_header_id|>system<|end_header_id|>
+    You are a grader assessing whether an answer is useful to resolve a question. \n 
+    Here is the answer:
+    \n ------- \n
+    {answer} 
+    \n ------- \n
+    Here is the question: {question}
+    Give a binary score 'yes' or 'no' to indicate whether the answer is useful to resolve a question. \n
+    Provide the binary score as a JSON with a single key 'score'.
+     Do not include any preamble, explanation, or additional text
+    <|eot_id|><|start_header_id|>assistant<|end_header_id|>""",
+    input_variables=["answer", "question"],
+)
+
+answer_grader = ANSWER_GRADER_PROMPT | llm | JsonOutputParser()
+
+## Question Re-writer
+
+# Prompt
+REWRITER_PROMPT = PromptTemplate(
+    template="""<|begin_of_text|><|start_header_id|>system<|end_header_id|>
+    You a question re-writer that converts an input question to a better version that is optimized \n 
+     for vectorstore retrieval. Look at the initial and formulate an improved question. \n
+     Here is the initial question: \n\n {question}. Improved question with no preamble: \n 
+     <|eot_id|><|start_header_id|>assistant<|end_header_id|>""",
+    input_variables=["answer", "question"],
+)
+
+question_rewriter = REWRITER_PROMPT | llm | StrOutputParser()
+# question_rewriter.invoke({"question": question})
+
+# answer_grader.invoke({"question": question, "generation": generation})
+
 ########### Create Nodes and Actions ###########
 from typing_extensions import TypedDict
 from typing import List
@@ -576,20 +666,15 @@ def route_question(state):
 
     log.debug('Routing to {}....'.format(result["agent"]))
 
-    if result['agent'] == 'payroll_agent':
-        log.debug('Routing to {}....'.format(result["agent"]))
-        return "payroll_agent"
-    elif result['agent'] == 'policy_agent':
-        log.debug('Routing to {}....'.format(result["agent"]))
-        return "policy_agent"
+    return result["agent"]
 
 state = AgentState(question="What is my salary on jan 2024 ?", answer="", documents=None)
 route_question(state)
 
 from langchain.schema import Document
-def retrieve_policy(state):
+def retrieve(state):
     """
-    Retrieve policy documents from vectorstore
+    Retrieve documents from vectorstore
 
     Args:
         state (dict): The current graph state
@@ -597,7 +682,7 @@ def retrieve_policy(state):
     Returns:
         state (dict): New key added to state, documents, that contains retrieved documents
     """
-    log.debug("Retreiving policy documents.......")
+    print("---RETRIEVE DOCUMENTS---")
     question = state["question"]
     documents = compression_retriever.invoke(question)
     return {"documents": documents, "question": question}
@@ -605,7 +690,7 @@ def retrieve_policy(state):
 # state = AgentState(question="What is leave policy?", answer="", documents=None)
 # retrieve_policy(state)
 
-def generate_answer(state):
+def generate(state):
     """
     Generate answer using retrieved data
 
@@ -615,7 +700,7 @@ def generate_answer(state):
     Returns:
         state (dict): New key added to state, generation, that contains LLM generation
     """
-    log.debug("Generating answer.......")
+    print("---GENERATE ANSWER---")
     question = state["question"]
     documents = state["documents"]
 
@@ -627,7 +712,135 @@ def generate_answer(state):
 # state = AgentState(question="What is leave policy?", answer="", documents=[Document(page_content="According to leave policy, there are two types of leaves 1: PL 2: CL")])
 # generate_answer(state)
 
-def query_payroll(state):
+def grade_documents(state):
+    """
+    Determines whether the retrieved documents are relevant to the question.
+
+    Args:
+        state (dict): The current graph state
+
+    Returns:
+        state (dict): Updates documents key with only filtered relevant documents
+    """
+
+    print("---CHECK DOCUMENT RELEVANCE TO QUESTION---")
+    question = state["question"]
+    documents = state["documents"]
+
+    # Score each doc
+    filtered_docs = []
+    for d in documents:
+        score = retrieval_grader.invoke(
+            {"question": question, "document": d.page_content}
+        )
+        grade = score["score"]
+        if grade == "yes":
+            print("---GRADE: DOCUMENT RELEVANT---")
+            filtered_docs.append(d)
+        else:
+            print("---GRADE: DOCUMENT NOT RELEVANT---")
+            continue
+    return {"documents": filtered_docs, "question": question}
+
+def transform_query(state):
+    """
+    Transform the query to produce a better question.
+
+    Args:
+        state (dict): The current graph state
+
+    Returns:
+        state (dict): Updates question key with a re-phrased question
+    """
+
+    print("---TRANSFORM QUERY---")
+    question = state["question"]
+    documents = state["documents"]
+
+    # Re-write question
+    better_question = question_rewriter.invoke({"question": question})
+    return {"documents": documents, "question": better_question}
+
+def decide_to_generate(state):
+    """
+    Determines whether to generate an answer, or re-generate a question.
+
+    Args:
+        state (dict): The current graph state
+
+    Returns:
+        str: Binary decision for next node to call
+    """
+
+    print("---ASSESS GRADED DOCUMENTS---")
+    question = state["question"]
+    filtered_documents = state["documents"]
+
+    if not filtered_documents:
+        # All documents have been filtered check_relevance
+        # We will re-generate a new query
+        print(
+            "---DECISION: ALL DOCUMENTS ARE NOT RELEVANT TO QUESTION, TRANSFORM QUERY---"
+        )
+        return "transform_query"
+    else:
+        # We have relevant documents, so generate answer
+        print("---DECISION: GENERATE---")
+        return "generate"
+    
+def fallback(state):
+    """
+    Fallback to default answer.
+
+    Args:
+        state (dict): The current graph state
+
+    Returns:
+        str: Decision for next node to call
+    """
+
+   
+    return {"answer": "Sorry,I don't know the answer to this question."}
+    
+def grade_generation_v_documents_and_question(state):
+    """
+    Determines whether the generation is grounded in the document and answers question.
+
+    Args:
+        state (dict): The current graph state
+
+    Returns:
+        str: Decision for next node to call
+    """
+
+    print("---CHECK HALLUCINATIONS---")
+    question = state["question"]
+    documents = state["documents"]
+    answer = state["answer"]
+
+    score = hallucination_grader.invoke(
+        {"documents": documents, "answer": answer}
+    )
+    grade = score["score"]
+
+    # Check hallucination
+    if grade == "yes":
+        print("---DECISION: GENERATION IS GROUNDED IN DOCUMENTS---")
+        # Check question-answering
+        print("---GRADE GENERATION vs QUESTION---")
+        score = answer_grader.invoke({"question": question, "answer": answer})
+        grade = score["score"]
+        if grade == "yes":
+            print("---DECISION: GENERATION ADDRESSES QUESTION---")
+            return "useful"
+        else:
+            print("---DECISION: GENERATION DOES NOT ADDRESS QUESTION---")
+            return "not useful"
+    else:
+        print("---DECISION: GENERATION IS NOT GROUNDED IN DOCUMENTS, RE-TRY---")
+        return "not supported"
+
+def payroll(state):
     """
     Query payroll api to retrieve payroll data
 
@@ -638,7 +851,7 @@ def query_payroll(state):
         state (dict): Updated state with retrived payroll data
     """
 
-
+    print("---QUERY PAYROLL API---")
     question = state["question"]
     payroll_query_filters = fiter_extraction_chain.invoke({"question":question})
     payroll_api_query_results = dummy_payroll_api_call(1234, result["month"], result["year"])
@@ -659,19 +872,42 @@ from langgraph.graph import END, StateGraph
 workflow = StateGraph(AgentState)
 
 # Define the nodes
-workflow.add_node("payroll_agent", query_payroll)
-workflow.add_node("policy_agent", retrieve_policy)
-workflow.add_node("generator_agent", generate_answer)
+workflow.add_node("payroll", payroll)
+workflow.add_node("retrieve", retrieve)
+workflow.add_node("generate", generate)
+# workflow.add_node("grade_documents", grade_documents)  # grade documents
+# workflow.add_node("transform_query", transform_query)  # transform_query
+# workflow.add_node("fallback", fallback)
 
 workflow.set_conditional_entry_point(
     route_question,
     {
-        "payroll_agent": "payroll_agent",
-        "policy_agent": "policy_agent",
+        "payroll": "payroll",
+        "raqa": "retrieve",
     },
 )
-workflow.add_edge("payroll_agent", "generator_agent")
-workflow.add_edge("policy_agent", "generator_agent")
-workflow.add_edge("generator_agent", END)
+workflow.add_edge("payroll", "generate")
+# workflow.add_edge("retrieve", "generate")
+# workflow.add_edge("generate", END)
+workflow.add_edge("retrieve", "generate")
+# workflow.add_conditional_edges(
+#     "grade_documents",
+#     decide_to_generate,
+#     {
+#         "transform_query": "transform_query",
+#         "generate": "generate",
+#     },
+# )
+# workflow.add_edge("transform_query", "retrieve")
+# workflow.add_conditional_edges(
+#     "generate",
+#     grade_generation_v_documents_and_question,
+#     {
+#         "not supported": "generate",
+#         "useful": END,
+#         "not useful": "fallback",
+#     },
+# )
+workflow.add_edge("generate", END)
 
 app = workflow.compile()

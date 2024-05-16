@@ -20,11 +20,11 @@ async def main(message: cl.Message):
     msg = cl.Message(content="")
 
     input = {"question": message.content}
-
-    async for output in runnable.astream(input):
+   
+    for output in runnable.stream(input):
         for key, value in output.items():
             print(f"Finished running: {key}:")
-            if key == "generator_agent":
+            if key == "generate":
                 answer = value["answer"]
                 await msg.stream_token(answer)
 
