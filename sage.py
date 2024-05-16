@@ -27,8 +27,6 @@ text_splitter = RecursiveCharacterTextSplitter(
 )
 doc_splits = text_splitter.split_documents(documents)
 
-print(len(doc_splits),doc_splits[0])
-
 vectorstore = FAISS.from_documents(documents=doc_splits,embedding=embed_model)
 
 from langchain.retrievers import ContextualCompressionRetriever
@@ -320,7 +318,7 @@ def dummy_payroll_api_call(employee_id, month, year):
 
   return data[year][month]
 
-print(dummy_payroll_api_call(1234, 'CUR', 2024))
+# print(dummy_payroll_api_call(1234, 'CUR', 2024))
 
 import time
 from langchain.prompts import PromptTemplate
@@ -350,9 +348,9 @@ router_prompt = PromptTemplate(
 
 router_chain = router_prompt | llm | JsonOutputParser()
 
-print(router_chain.invoke({"question":"What is my salary on 6 2024 ?"}))
+# print(router_chain.invoke({"question":"What is my salary on 6 2024 ?"}))
 
-print(router_chain.invoke({"question":"What is leave policy ?"}))
+# print(router_chain.invoke({"question":"What is leave policy ?"}))
 
 payroll_schema= {
   "$schema": "http://json-schema.org/draft-07/schema#",
@@ -482,7 +480,7 @@ payroll_schema= {
   "required": ["employeeDetails", "paymentDetails", "companyDetails"]
 }
 
-print(str(payroll_schema))
+# print(str(payroll_schema))
 
 import time
 from langchain.prompts import PromptTemplate
@@ -511,7 +509,7 @@ filter_extraction_prompt = PromptTemplate(
 
 fiter_extraction_chain = filter_extraction_prompt | llm | JsonOutputParser()
 
-print(fiter_extraction_chain.invoke({"question":"What is my salary on 6 2024 ?"}))
+# print(fiter_extraction_chain.invoke({"question":"What is my salary on 6 2024 ?"}))
 
 import time
 from langchain.prompts import PromptTemplate
@@ -550,10 +548,10 @@ api_result
 
 payroll_qa_chain.invoke({"question":"What is my salary on jan 2024 ?", "data":api_result, "schema":payroll_schema})
 
+
+########### Create Nodes and Actions ###########
 from typing_extensions import TypedDict
 from typing import List
-
-### State
 
 class AgentState(TypedDict):
     question : str
@@ -604,8 +602,8 @@ def retrieve_policy(state):
     documents = compression_retriever.invoke(question)
     return {"documents": documents, "question": question}
 
-state = AgentState(question="What is leave policy?", answer="", documents=None)
-retrieve_policy(state)
+# state = AgentState(question="What is leave policy?", answer="", documents=None)
+# retrieve_policy(state)
 
 def generate_answer(state):
     """
@@ -626,8 +624,8 @@ def generate_answer(state):
 
     return {"documents": documents, "question": question, "answer": answer}
 
-state = AgentState(question="What is leave policy?", answer="", documents=[Document(page_content="According to leave policy, there are two types of leaves 1: PL 2: CL")])
-generate_answer(state)
+# state = AgentState(question="What is leave policy?", answer="", documents=[Document(page_content="According to leave policy, there are two types of leaves 1: PL 2: CL")])
+# generate_answer(state)
 
 def query_payroll(state):
     """
@@ -652,9 +650,11 @@ def query_payroll(state):
     documents = [Document(page_content=context)]
     return {"documents": documents, "question": question}
 
-state = AgentState(question="Tell me salary for Jan 2024?", answer="", documents=None)
-query_payroll(state)
+# state = AgentState(question="Tell me salary for Jan 2024?", answer="", documents=None)
+# query_payroll(state)
 
+
+########### Build Execution Graph ###########
 from langgraph.graph import END, StateGraph
 workflow = StateGraph(AgentState)
 
